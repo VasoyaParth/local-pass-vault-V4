@@ -1,0 +1,1252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Password Vault v1.0.2 — Resizable + Auto Backup</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+<style>
+  /* ===== THEME & LAYOUT VARIABLES ===== */
+  :root{
+    --radius:12px;
+    --bg:#071021;
+    --panel:rgba(8,12,22,0.72);
+    --muted:#9fb3c8;
+    --text:#e6f0fb;
+    --accent:#60a5fa;
+    --accent-2:#7c3aed;
+    --ok:#16a34a;
+    --danger:#ef4444;
+    --glass:rgba(255,255,255,0.04);
+    --col1:280px;
+    --col2:1fr;
+    --col3:340px;
+    --resizer-size:8px;
+    --scrollbar-bg: rgba(255,255,255,0.04);
+    --scrollbar-thumb: rgba(255,255,255,0.06);
+    --scrollbar-thumb-hover: rgba(255,255,255,0.10);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,Arial;background:linear-gradient(180deg,#061025,#071231);color:var(--text);-webkit-font-smoothing:antialiased}
+  body{display:flex;flex-direction:column;min-height:100vh}
+
+  header{height:68px;display:flex;align-items:center;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,0.03);}
+  .logo{width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#06b6d4);display:grid;place-items:center;color:white;font-weight:800}
+  .brand{margin-left:12px}
+  .brand .title{font-weight:800}
+  .brand .sub{font-size:12px;color:var(--muted)}
+
+  .header-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+  select,input{font-size:14px}
+
+  /* grid with resizers: col1 resizer col2 resizer col3 */
+  .app{
+    display:grid;
+    grid-template-columns: var(--col1) var(--resizer-size) var(--col2) var(--resizer-size) var(--col3);
+    gap:0;
+    padding:14px;
+    flex:1;
+    min-height:0;
+    align-items:start;
+  }
+
+  .panel{background:var(--panel);border-radius:var(--radius);padding:12px;border:1px solid rgba(255,255,255,0.03);backdrop-filter:blur(8px);min-height:0;display:flex;flex-direction:column}
+
+  /* SIDEBAR */
+  .sidebar{display:flex;flex-direction:column;gap:12px;height:100%}
+  .ws-search{display:flex;gap:8px}
+  .input{padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--text)}
+  .ws-grid{display:flex;flex-direction:column;gap:8px;overflow:auto;padding-right:6px}
+  .ws-card{padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default}
+  .ws-card .left{display:flex;gap:8px;align-items:center}
+  .ws-thumb{width:44px;height:44px;border-radius:8px;display:grid;place-items:center;color:white;font-weight:800;overflow:hidden}
+  .ws-thumb img{width:100%;height:100%;object-fit:cover;border-radius:8px}
+  .ws-actions button{margin-left:6px}
+
+  /* CENTER */
+  .main{display:flex;flex-direction:column;gap:12px;height:100%;min-height:0}
+  .topbar{display:flex;gap:10px;align-items:center}
+  .actions{display:flex;gap:8px}
+  .btn{padding:8px 12px;border-radius:10px;border:0;background:var(--accent);color:white;cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--accent);border:1px solid rgba(255,255,255,0.04)}
+
+  .list-area{display:flex;flex-direction:column;gap:10px;flex:1;overflow:auto;padding:6px;min-height:0}
+
+  /* LIST ITEM */
+  .list-item{display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.03);box-shadow:0 6px 18px rgba(0,0,0,0.35);transition:transform .18s ease, box-shadow .18s ease;opacity:0;transform:translateY(6px);cursor:default;min-width:0}
+  .list-item.visible{opacity:1;transform:none}
+  .list-item:hover{transform:translateY(-4px);box-shadow:0 18px 40px rgba(2,6,23,0.6)}
+
+  .li-left{display:flex;align-items:center;gap:12px;min-width:0}
+  .li-icon{width:48px;height:48px;border-radius:10px;display:grid;place-items:center;font-size:18px}
+  .li-info{display:flex;flex-direction:column;min-width:0}
+  /* wrap long titles - clamp to 2 lines */
+  .li-title{font-weight:700;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+  .li-sub{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .li-actions{display:flex;align-items:center;gap:8px}
+  .act-btn{background:transparent;border:0;color:var(--muted);padding:8px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+  .act-btn:hover{color:var(--text);background:rgba(255,255,255,0.03);transform:scale(1.06)}
+
+  .fa-copy{color:#34d399} /* teal */
+  .fa-key{color:#fbbf24} /* amber */
+  .fa-pen{color:#60a5fa} /* blue */
+  .fa-eye{color:#a78bfa} /* violet */
+  .fa-trash{color:var(--danger)}
+  .fa-link{color:#7dd3fc}
+
+  /* RIGHT */
+  .right{display:flex;flex-direction:column;gap:10px;height:100%;min-height:0}
+  .logs{flex:1;overflow:auto;padding:8px;border-radius:8px;background:transparent;min-height:0}
+
+  /* resizer */
+  .resizer{background:transparent;width:var(--resizer-size);cursor:col-resize;display:block;align-self:stretch}
+  .resizer:hover{background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01))}
+
+  /* MODAL */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.6);backdrop-filter:blur(10px);display:none;align-items:center;justify-content:center;z-index:9999}
+  .modal-backdrop.active{display:flex}
+  .modal{width:760px;max-width:calc(100% - 36px);background:var(--panel);border-radius:12px;padding:16px;border:1px solid rgba(255,255,255,0.03);box-shadow:0 20px 60px rgba(2,6,23,0.45)}
+  .modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+
+  /* TOASTS */
+  .toasts{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:10000}
+  .toast{padding:10px 14px;border-radius:10px;color:white;min-width:200px;transform:translateX(16px);opacity:0;transition:all .28s}
+  .toast.show{transform:translateX(0);opacity:1}
+  .toast.info{background:linear-gradient(90deg,var(--accent),#06b6d4)}
+  .toast.success{background:var(--ok)}
+  .toast.error{background:var(--danger)}
+
+  footer{height:42px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-top:1px solid rgba(255,255,255,0.02)}
+
+  /* custom minimal scrollbars (webkit & firefox) */
+  .panel::-webkit-scrollbar, .logs::-webkit-scrollbar, .ws-grid::-webkit-scrollbar, .list-area::-webkit-scrollbar, body::-webkit-scrollbar{
+    width:10px; height:10px;
+  }
+  .panel::-webkit-scrollbar-track, .logs::-webkit-scrollbar-track{ background: transparent; }
+  .panel::-webkit-scrollbar-thumb, .logs::-webkit-scrollbar-thumb{
+    background: var(--scrollbar-thumb); border-radius:10px; border: 2px solid transparent; background-clip: padding-box;
+  }
+  .panel::-webkit-scrollbar-thumb:hover, .logs::-webkit-scrollbar-thumb:hover{ background: var(--scrollbar-thumb-hover); }
+
+  /* firefox */
+  .panel{scrollbar-width:thin; scrollbar-color: var(--scrollbar-thumb) transparent}
+
+  /* Responsive: collapse into single column */
+  @media(max-width:1100px){
+    .app{grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; gap:12px}
+    .resizer{display:none}
+    .right{display:none}
+  }
+
+  /* small utility */
+  .muted{color:var(--muted);font-size:13px}
+  .small{font-size:12px;color:var(--muted)}
+  .file-info{font-size:12px;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body data-theme="midnight">
+  <header>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="logo">PV</div>
+      <div class="brand">
+        <div class="title">Password Vault</div>
+        <div class="sub">v1.0.2 — local encrypted vault</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div style="display:flex;flex-direction:column;align-items:flex-end">
+        <div id="dateNow" style="font-weight:700"></div>
+        <div id="timeNow" style="font-size:12px;color:var(--muted)"></div>
+      </div>
+      <select id="themeSelect" class="input" title="Theme" style="width:140px">
+        <option value="midnight" selected>Midnight</option>
+        <option value="classic">Classic</option>
+        <option value="neon">Neon</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="app" id="appGrid">
+    <!-- left column -->
+    <aside class="panel sidebar" id="colLeft">
+      <div class="ws-search">
+        <input id="wsSearch" class="input" placeholder="Search workspaces..." />
+        <button id="newWsBtn" class="btn">New</button>
+      </div>
+      <div id="wsGrid" class="ws-grid" aria-live="polite"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto">
+        <div>
+          <div style="font-size:12px;color:var(--muted)">Location</div>
+          <div id="locInfo" style="font-size:13px;color:var(--muted)">Detecting…</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:12px;color:var(--muted)">Version</div>
+          <div>v1.0.2</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- resizer 1 -->
+    <div class="resizer" id="resizer1" title="Drag to resize"></div>
+
+    <!-- center -->
+    <main class="panel main" id="colCenter">
+      <div class="topbar">
+        <input id="entrySearch" class="input" placeholder="Search credentials..." />
+        <div class="actions">
+          <button id="importBtn" class="btn ghost" title="Import backup">Import</button>
+          <button id="exportBtn" class="btn ghost" title="Export all">Export</button>
+          <button id="lockBtn" class="btn ghost" title="Lock/Unlock workspace">Unlock</button>
+          <button id="addEntryBtn" class="btn" title="Add new credential"><i class="fa-solid fa-plus"></i>&nbsp;Add Entry</button>
+        </div>
+      </div>
+
+      <div>
+        <h3 id="workspaceTitle">No workspace selected</h3>
+        <div id="workspaceSub" class="meta">Create a workspace and set a PIN to encrypt contents.</div>
+      </div>
+
+      <div id="listArea" class="list-area" style="padding:6px;overflow:hidden;min-height:0"></div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
+        <button id="showAll" class="btn ghost">Show all</button>
+      </div>
+    </main>
+
+    <!-- resizer 2 -->
+    <div class="resizer" id="resizer2" title="Drag to resize"></div>
+
+    <!-- right -->
+    <aside class="panel right" id="colRight">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h4 style="margin:0">Activity</h4>
+        <button id="clearLog" class="btn ghost">Clear</button>
+      </div>
+      <div id="activityLog" class="logs"></div>
+
+      <!-- Backup & Log management controls -->
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="setBackupFolderBtn" class="btn ghost" title="Set directory to store backups & logs">Set Backup Folder</button>
+          <div id="backupFolderLabel" class="small muted">No folder set</div>
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button id="backupNowBtn" class="btn">Backup Now</button>
+          <button id="exportLogBtn" class="btn ghost">Export Log</button>
+        </div>
+
+        <div style="display:flex;gap:8px;align-items:center">
+          <label class="small muted" style="margin-right:6px">Auto Backup</label>
+          <input type="checkbox" id="autoBackupToggle" />
+          <select id="autoBackupInterval" class="input" style="width:120px">
+            <option value="5">5 min</option>
+            <option value="10" selected>10 min</option>
+            <option value="30">30 min</option>
+            <option value="60">60 min</option>
+          </select>
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button id="restoreTrashBtn" class="btn ghost">Restore From Trash</button>
+          <button id="clearTrashBtn" class="btn ghost">Clear Trash</button>
+        </div>
+
+        <div class="file-info" id="backupInfo"></div>
+      </div>
+    </aside>
+  </div>
+
+  <footer>
+    <div>Local-first • AES-GCM • PBKDF2</div>
+    <div id="footerActions">
+      <button id="footerExport" class="btn ghost">Export</button>
+      <button id="footerImport" class="btn ghost">Import</button>
+    </div>
+  </footer>
+
+  <!-- Modal -->
+  <div id="modalBackdrop" class="modal-backdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong id="modalTitle">Modal</strong>
+        <div><button id="modalClose" class="btn">Close</button></div>
+      </div>
+      <div id="modalContent" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script>
+/* ===========================================================
+   Enhanced Password Vault with:
+   - Resizable columns
+   - Scrollable activity log
+   - Custom minimal scrollbars
+   - Auto/manual backups to directory (File System Access API)
+   - vault.log append in chosen folder
+   - Trash backups for accidental deletes
+   =========================================================== */
+
+/* ---------------------- Utilities ---------------------- */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+function el(tag, attrs = {}, html = '') {
+  const d = document.createElement(tag);
+  for (const k in attrs) {
+    if (k === 'className') d.className = attrs[k];
+    else if (k === 'dataset') Object.assign(d.dataset, attrs[k]);
+    else if (k === 'textContent') d.textContent = attrs[k];
+    else d.setAttribute(k, attrs[k]);
+  }
+  if (html) d.innerHTML = html;
+  return d;
+}
+function now() { return new Date().toLocaleTimeString(); }
+function log(msg){
+  const wrap = $('#activityLog');
+  const d = el('div', {}, `[${now()}] ${escapeHtml(msg)}`);
+  wrap.prepend(d);
+  // cap logs in UI for memory
+  while (wrap.children.length > 1000) wrap.removeChild(wrap.lastChild);
+  // also append to on-disk log if folder set
+  appendToVaultLog(`[${new Date().toISOString()}] ${msg}`).catch(()=>{ /* ignore */ });
+}
+
+/* Toast */
+function toast(msg, type='info', ttl=2600){
+  const t = el('div', { className: 'toast ' + type });
+  t.textContent = msg;
+  $('#toasts').appendChild(t);
+  setTimeout(()=> t.classList.add('show'), 20);
+  setTimeout(()=> { t.classList.remove('show'); setTimeout(()=> t.remove(),300); }, ttl);
+}
+
+/* Safe escape */
+function escapeHtml(s){
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,"&#39;");
+}
+
+/* base64 helpers */
+function bufToB64(buf){
+  const bytes = (buf instanceof Uint8Array) ? buf : new Uint8Array(buf);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i=0;i<bytes.length;i+=chunk) binary += String.fromCharCode.apply(null, bytes.subarray(i, i+chunk));
+  return btoa(binary);
+}
+function b64ToBuf(b64){
+  const bin = atob(b64);
+  const u = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i);
+  return u;
+}
+
+/* ---------------------- Crypto ---------------------- */
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+async function deriveKey(pin, saltB64, iterations=200000){
+  const salt = b64ToBuf(saltB64);
+  const base = await crypto.subtle.importKey('raw', encoder.encode(pin), { name: 'PBKDF2' }, false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name:'PBKDF2', salt, iterations, hash:'SHA-256' }, base, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']);
+}
+async function encryptWithKey(key, plain){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, encoder.encode(plain));
+  return { cipher: bufToB64(new Uint8Array(ct)), iv: bufToB64(iv) };
+}
+async function decryptWithKey(key, cipherB64, ivB64){
+  const ct = b64ToBuf(cipherB64).buffer;
+  const iv = b64ToBuf(ivB64);
+  const pt = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, ct);
+  return decoder.decode(pt);
+}
+
+/* ---------------------- Storage & State ---------------------- */
+const WS_KEY = 'pv_workspaces_v102';
+let workspaces = JSON.parse(localStorage.getItem(WS_KEY) || '[]');
+const unlockedKeys = {}; // wsId -> CryptoKey or null (no pin)
+const decryptedCache = {}; // wsId -> {entryId:obj}
+let currentWs = null;
+let lastActivity = Date.now();
+
+const LOCAL_LAYOUT_KEY = 'pv_layout_v1';
+const AUTO_BACKUP_KEY = 'pv_auto_backup_v1';
+const DB_HANDLES = 'pv_handles_db_v1'; // IndexedDB name
+
+// backup/trash filenames (in backup folder)
+const VAULT_LOG_NAME = 'vault.log';
+const VAULT_BACKUP_NAME = 'vault-auto-backup.json';
+const VAULT_BACKUP_SECRET_NAME = 'vault-auto-backup-secret.json';
+const VAULT_TRASH_NAME = 'vault-trash.json';
+
+let backupDirHandle = null;
+let autoBackupTimer = null;
+
+/* entries storage helpers */
+function saveWorkspaces(){ localStorage.setItem(WS_KEY, JSON.stringify(workspaces)); }
+function entriesKey(wsId){ return `pv_entries_${wsId}`; }
+function loadEntries(wsId){ try { return JSON.parse(localStorage.getItem(entriesKey(wsId)) || '[]'); } catch(e){ return []; } }
+function saveEntries(wsId, arr){ localStorage.setItem(entriesKey(wsId), JSON.stringify(arr)); }
+
+/* ---------------------- UI: Time/Theme/Location ---------------------- */
+const themeSelect = $('#themeSelect');
+const savedTheme = localStorage.getItem('pv_theme') || 'midnight';
+document.body.setAttribute('data-theme', savedTheme);
+themeSelect.value = savedTheme;
+themeSelect.addEventListener('change', ()=> {
+  document.body.setAttribute('data-theme', themeSelect.value);
+  localStorage.setItem('pv_theme', themeSelect.value);
+});
+function tick(){ $('#dateNow').textContent = new Date().toLocaleDateString(); $('#timeNow').textContent = new Date().toLocaleTimeString(); }
+setInterval(tick, 1000); tick();
+
+if (navigator.geolocation){
+  navigator.geolocation.getCurrentPosition(p => { $('#locInfo').textContent = `${p.coords.latitude.toFixed(4)}, ${p.coords.longitude.toFixed(4)}`; log('Location detected'); }, ()=> $('#locInfo').textContent = 'Denied/Unavailable');
+} else $('#locInfo').textContent = 'Unavailable';
+
+/* ---------------------- Modal ---------------------- */
+const modalBackdrop = $('#modalBackdrop');
+const modalContent = $('#modalContent');
+const modalTitle = $('#modalTitle');
+$('#modalClose').addEventListener('click', closeModal);
+modalBackdrop.addEventListener('click', e => { if (e.target === modalBackdrop) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+function openModal(title, html, onOpen){ modalTitle.textContent = title; modalContent.innerHTML = html; modalBackdrop.classList.add('active'); if (onOpen) setTimeout(onOpen,40); }
+function closeModal(){ modalBackdrop.classList.remove('active'); modalContent.innerHTML = ''; }
+
+/* ---------------------- Workspaces ---------------------- */
+function renderWorkspaces(){
+  const grid = $('#wsGrid');
+  grid.innerHTML = '';
+  const q = $('#wsSearch').value.trim().toLowerCase();
+  const visible = workspaces.filter(w => !q || (w.name||'').toLowerCase().includes(q));
+  if (visible.length === 0){ grid.innerHTML = '<div style="color:var(--muted)">No workspaces — create one.</div>'; return; }
+  visible.forEach(w => {
+    const row = el('div', { className: 'ws-card' });
+    let thumbHtml = `<div class='ws-thumb' style='background:linear-gradient(135deg, var(--accent), var(--accent-2))'><i class="fa-solid fa-folder"></i></div>`;
+    if (w.thumb) thumbHtml = `<div class='ws-thumb'><img alt="${escapeHtml(w.name)}" src="${escapeHtml(w.thumb)}" /></div>`;
+    const leftHtml = `<div class='left'>${thumbHtml}<div style='margin-left:8px;min-width:0'><div style='font-weight:700;white-space:normal;word-break:break-word'>${escapeHtml(w.name)}</div><div style='font-size:12px;color:var(--muted)'>${w.createdAt ? w.createdAt.split('T')[0] : ''}</div></div></div>`;
+    const left = el('div', {}, leftHtml);
+    const actions = el('div', { className: 'ws-actions' });
+    const openBtn = el('button', { className: 'btn ghost', title: 'Open workspace' }, '<i class="fa-solid fa-arrow-right"></i>');
+    openBtn.addEventListener('click', ()=> selectWorkspace(w.id));
+    const delBtn = el('button', { className: 'btn ghost', title: 'Delete workspace' }, '<i class="fa-solid fa-trash"></i>');
+    delBtn.addEventListener('click', ()=> confirmDeleteWorkspace(w.id));
+    actions.appendChild(openBtn);
+    actions.appendChild(delBtn);
+    row.appendChild(left);
+    row.appendChild(actions);
+    row.querySelector('.left').addEventListener('click', ()=> selectWorkspace(w.id));
+    grid.appendChild(row);
+  });
+}
+
+function createWorkspaceFlow(){
+  openModal('Create workspace', `
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <input id="newWsName" class="input" placeholder="Workspace name" />
+      <input id="newWsPin" class="input" type="password" placeholder="PIN (min 4 chars)" />
+      <input id="newWsThumb" type="file" accept="image/*" />
+    </div>
+    <div class="actions"><button id="createWsBtn" class="btn">Create</button><button id="cancelWsBtn" class="btn ghost">Cancel</button></div>
+  `, ()=>{
+    $('#cancelWsBtn').addEventListener('click', closeModal);
+    $('#createWsBtn').addEventListener('click', async ()=>{
+      const name = $('#newWsName').value.trim();
+      const pin = $('#newWsPin').value;
+      if (!name || !pin || pin.length < 4){ toast('Name and PIN required (PIN 4+ chars)','error'); return; }
+      let thumb = null;
+      const f = $('#newWsThumb').files[0];
+      if (f) try { thumb = await fileToDataURL(f); } catch(e){ /* ignore */ }
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const saltB64 = bufToB64(salt);
+      try{
+        const key = await deriveKey(pin, saltB64);
+        const verifierPayload = 'vault-verifier:'+Date.now();
+        const verEnc = await encryptWithKey(key, verifierPayload);
+        const id = 'ws_'+Math.random().toString(36).slice(2,10);
+        const ws = { id, name, createdAt: new Date().toISOString(), thumb, salt: saltB64, verifier: verEnc.cipher, verifierIV: verEnc.iv };
+        workspaces.push(ws);
+        saveWorkspaces();
+        saveEntries(id, []);
+        unlockedKeys[id] = key;
+        decryptedCache[id] = {};
+        closeModal();
+        renderWorkspaces();
+        selectWorkspace(id);
+        toast('Workspace created & unlocked','success');
+        log('Workspace created: '+name);
+      }catch(e){ console.error(e); toast('Failed to create workspace','error'); }
+    });
+  });
+}
+
+function confirmDeleteWorkspace(wsId){
+  const ws = workspaces.find(w=>w.id===wsId); if(!ws) return;
+  openModal('Delete workspace', `<div>Delete <b>${escapeHtml(ws.name)}</b> and all entries? This cannot be undone.</div><div class="actions"><button id="delConfirm" class="btn" style="background:var(--danger)">Delete</button><button id="delCancel" class="btn ghost">Cancel</button></div>`, ()=>{
+    $('#delCancel').addEventListener('click', closeModal);
+    $('#delConfirm').addEventListener('click', async ()=>{
+      // backup workspace into trash before removing
+      try { await pushToTrash({ type:'workspace', payload: ws, timestamp: new Date().toISOString() }); } catch(e){}
+      workspaces = workspaces.filter(w=>w.id!==wsId);
+      saveWorkspaces();
+      localStorage.removeItem(entriesKey(wsId));
+      delete unlockedKeys[wsId]; delete decryptedCache[wsId];
+      if (currentWs === wsId) currentWs = null;
+      renderWorkspaces(); renderList(); closeModal();
+      toast('Workspace deleted','info'); log('Workspace deleted: '+ws.name);
+    });
+  });
+}
+
+function selectWorkspace(wsId){
+  const ws = workspaces.find(w=>w.id===wsId); if(!ws) return;
+  currentWs = wsId;
+  $('#workspaceTitle').textContent = ws.name;
+  $('#workspaceSub').textContent = `Created ${ws.createdAt ? ws.createdAt.split('T')[0] : ''}`;
+  updateLockUI(); renderList(); log('Selected workspace: '+ws.name);
+}
+
+function updateLockUI(){
+  const btn = $('#lockBtn');
+  if (!currentWs){ btn.disabled = true; return; }
+  btn.disabled = false;
+  const ws = workspaces.find(w=>w.id===currentWs);
+  btn.textContent = (ws && ws.salt && !unlockedKeys[currentWs]) ? 'Unlock' : 'Lock';
+}
+
+/* ---------------------- Lock / Unlock ---------------------- */
+async function unlockFlow(){
+  if (!currentWs){ toast('Select workspace first','error'); return; }
+  const ws = workspaces.find(w=>w.id===currentWs); if(!ws) return;
+  if (!ws.salt){ unlockedKeys[ws.id] = null; updateLockUI(); renderList(); toast('Workspace unlocked (no PIN)','info'); return; }
+  if (unlockedKeys[ws.id]){ delete unlockedKeys[ws.id]; delete decryptedCache[ws.id]; updateLockUI(); renderList(); toast('Workspace locked','info'); log('Locked '+ws.name); return; }
+  openModal('Unlock workspace', `<input id="unlockPin" class="input" type="password" placeholder="Enter PIN" /><div class="actions"><button id="doUnlock" class="btn">Unlock</button><button id="cancelUnlock" class="btn ghost">Cancel</button></div>`, ()=>{
+    $('#cancelUnlock').addEventListener('click', closeModal);
+    $('#doUnlock').addEventListener('click', async ()=>{
+      const pin = $('#unlockPin').value; if (!pin){ toast('Enter PIN','error'); return; }
+      try{
+        const key = await deriveKey(pin, ws.salt);
+        const verified = await decryptWithKey(key, ws.verifier, ws.verifierIV);
+        if (!verified.startsWith('vault-verifier:')) throw new Error('bad');
+        unlockedKeys[ws.id] = key; decryptedCache[ws.id] = {};
+        closeModal(); toast('Workspace unlocked','success'); log('Unlocked '+ws.name);
+        // eager decrypt entries
+        const ents = loadEntries(ws.id);
+        for (const ent of ents){
+          if (ent.cipher){
+            try{ const pt = await decryptWithKey(key, ent.cipher, ent.iv); decryptedCache[ws.id][ent.id] = JSON.parse(pt); } catch(e){}
+          }
+        }
+        renderList(); updateLockUI();
+      }catch(e){ console.error(e); toast('Wrong PIN','error'); }
+    });
+  });
+}
+
+/* auto-lock */
+document.addEventListener('click', ()=> lastActivity = Date.now());
+document.addEventListener('keydown', ()=> lastActivity = Date.now());
+setInterval(()=> {
+  if (currentWs && unlockedKeys[currentWs] && (Date.now() - lastActivity) > (5*60*1000)){
+    const ws = workspaces.find(w=>w.id===currentWs);
+    delete unlockedKeys[currentWs]; delete decryptedCache[currentWs]; updateLockUI(); renderList();
+    toast('Auto-locked due to inactivity','info'); log('Auto-locked '+(ws?ws.name:''));
+  }
+}, 10000);
+
+/* ---------------------- Entries ---------------------- */
+function strength(p){ if(!p) return 0; let s=0; if(p.length>=8) s++; if(p.length>=12) s++; if(/[A-Z]/.test(p)&&/[a-z]/.test(p)) s++; if(/\d/.test(p)) s++; if(/[^\w]/.test(p)) s++; return s; }
+function strengthLabel(n){ return ['Very Weak','Weak','OK','Good','Strong','Excellent'][n] || '—'; }
+
+function addEntryFlow(){
+  if (!currentWs){ toast('Select workspace','error'); return; }
+  const ws = workspaces.find(w=>w.id===currentWs); if (ws.salt && !unlockedKeys[currentWs]){ toast('Unlock workspace first','error'); return; }
+  openModal('Add credential', `
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <input id="e_title" class="input" placeholder="Title" />
+      <input id="e_user" class="input" placeholder="Username" />
+      <div style='display:flex;gap:8px;align-items:center'>
+        <input id="e_pwd" class="input" placeholder="Password" />
+        <div style='font-size:12px;color:var(--muted)'>Strength: <span id="pwd_strength">—</span></div>
+      </div>
+      <input id="e_url" class="input" placeholder="URL / notes (optional)" />
+    </div>
+    <div class="actions"><button id="saveEntry" class="btn">Save</button><button id="cancelEntry" class="btn ghost">Cancel</button></div>
+  `, ()=>{
+    $('#cancelEntry').addEventListener('click', closeModal);
+    $('#e_pwd').addEventListener('input', ()=> { const sc = strength($('#e_pwd').value); $('#pwd_strength').textContent = strengthLabel(sc); });
+    $('#saveEntry').addEventListener('click', ()=> saveEntry());
+  });
+}
+
+async function saveEntry(editId=null){
+  const ws = workspaces.find(w=>w.id===currentWs); if (!ws){ toast('No workspace','error'); return; }
+  const title = $('#e_title').value.trim(); const username = $('#e_user').value.trim(); const password = $('#e_pwd').value; const url = $('#e_url').value.trim();
+  if (!title || !username || !password){ toast('Title, username and password required','error'); return; }
+  const id = editId || ('e_'+Math.random().toString(36).slice(2,10));
+  const createdAt = new Date().toISOString();
+  const arr = loadEntries(ws.id);
+
+  if (ws.salt){
+    try{
+      const key = unlockedKeys[ws.id]; if (!key){ toast('Unlock workspace','error'); return; }
+      const payload = JSON.stringify({ id, title, username, password, url, createdAt });
+      const enc = await encryptWithKey(key, payload);
+      if (editId){
+        const idx = arr.findIndex(x=>x.id===id); if (idx>-1) arr[idx] = { id, title, createdAt: arr[idx].createdAt || createdAt, cipher: enc.cipher, iv: enc.iv };
+      } else arr.push({ id, title, createdAt, cipher: enc.cipher, iv: enc.iv });
+      saveEntries(ws.id, arr);
+      if (!decryptedCache[ws.id]) decryptedCache[ws.id] = {};
+      decryptedCache[ws.id][id] = { id, title, username, password, url, createdAt };
+      closeModal(); toast(editId ? 'Updated' : 'Saved','success'); log((editId ? 'Updated' : 'Saved')+' credential: '+title); renderList();
+    }catch(e){ console.error(e); toast('Encrypt/save failed','error'); }
+  } else {
+    if (editId){ const idx = arr.findIndex(x=>x.id===id); if (idx>-1) arr[idx] = { id, title, username, password, url, createdAt }; } else arr.push({ id, title, username, password, url, createdAt });
+    saveEntries(ws.id, arr); closeModal(); toast('Saved (plaintext)','success'); log('Saved credential: '+title); renderList();
+  }
+}
+
+function openUrlCandidate(u){ try{ if (!u) { toast('No URL','info'); return; } if (u.startsWith('http')) window.open(u,'_blank'); else window.open('https://'+u,'_blank'); } catch(e){ toast('Unable to open URL','error'); } }
+
+function renderList(){
+  const area = $('#listArea'); area.innerHTML = '';
+  if (!currentWs){ area.innerHTML = '<div class="list-item"><div>No workspace selected.</div></div>'; return; }
+  const all = loadEntries(currentWs);
+  const q = $('#entrySearch').value.trim().toLowerCase();
+  const filtered = all.filter(e => {
+    const t = (e.title||'').toLowerCase(); const u = (e.username||'').toLowerCase(); const url = (e.url||'').toLowerCase();
+    return !q || t.includes(q) || u.includes(q) || url.includes(q);
+  }).slice(0,100);
+
+  if (filtered.length === 0){ area.innerHTML = '<div class="list-item"><div class="li-left"><div class="li-info"><div class="li-title">No credentials yet.</div><div class="li-sub">Add one to get started</div></div></div></div>'; return; }
+
+  filtered.forEach((e, idx) => {
+    const item = el('div', { className: 'list-item' });
+    let usernameMasked = ''; let urlText = ''; if (!e.cipher){ usernameMasked = e.username || ''; urlText = e.url || ''; }
+    if (e.cipher && decryptedCache[currentWs] && decryptedCache[currentWs][e.id]){ const obj = decryptedCache[currentWs][e.id]; usernameMasked = obj.username || ''; urlText = obj.url || ''; }
+    let iconClass = 'fa-lock'; if ((urlText||'').length) iconClass='fa-globe'; else if ((usernameMasked||'').length) iconClass='fa-user';
+    const iconBg = (iconClass==='fa-globe') ? 'background:linear-gradient(135deg,#06b6d4,#7dd3fc);' : (iconClass==='fa-user') ? 'background:linear-gradient(135deg,#7c3aed,#60a5fa);' : 'background:linear-gradient(135deg,#2563eb,#06b6d4);';
+    item.innerHTML = `
+      <div class="li-left">
+        <div class="li-icon" style="${iconBg}"><i class="fa-solid ${iconClass}"></i></div>
+        <div class="li-info">
+          <div class="li-title">${escapeHtml(e.title)}</div>
+          <div class="li-sub">${escapeHtml(urlText || e.username || 'No details')}</div>
+        </div>
+      </div>
+      <div class="li-actions">
+        <button class="act-btn" data-id="${e.id}" data-action="copy-user" title="Copy username"><i class="fa-solid fa-copy"></i></button>
+        <button class="act-btn" data-id="${e.id}" data-action="copy-pwd" title="Copy password"><i class="fa-solid fa-key"></i></button>
+        ${ (e.url || '') ? `<button class="act-btn" data-id="${e.id}" data-action="open-url" title="Open URL"><i class="fa-solid fa-link"></i></button>` : '' }
+        <button class="act-btn" data-id="${e.id}" data-action="view" title="View"><i class="fa-solid fa-eye"></i></button>
+        <button class="act-btn" data-id="${e.id}" data-action="edit" title="Edit"><i class="fa-solid fa-pen"></i></button>
+        <button class="act-btn" data-id="${e.id}" data-action="del" title="Delete"><i class="fa-solid fa-trash"></i></button>
+      </div>
+    `;
+    item.querySelectorAll('button').forEach(btn => btn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const id = btn.dataset.id; const act = btn.dataset.action;
+      if (act === 'view') viewEntry(id);
+      else if (act === 'edit') editEntry(id);
+      else if (act === 'del') await deleteEntryWithTrash(id);
+      else if (act === 'copy-user') await copyField(id, 'username');
+      else if (act === 'copy-pwd') await copyField(id, 'password');
+      else if (act === 'open-url'){
+        const arr = loadEntries(currentWs); const meta = arr.find(x=>x.id===id);
+        if (meta){ let u=''; if (meta.cipher && decryptedCache[currentWs] && decryptedCache[currentWs][id]) u = decryptedCache[currentWs][id].url||''; else u = meta.url||''; if (u) openUrlCandidate(u); else toast('No URL','info'); }
+      }
+    }));
+    area.appendChild(item);
+    setTimeout(()=> item.classList.add('visible'), 40 + idx*20);
+  });
+}
+
+async function copyField(entryId, field){
+  if (!currentWs){ toast('Select workspace','error'); return; }
+  const arr = loadEntries(currentWs); const meta = arr.find(x => x.id === entryId); if (!meta){ toast('Not found','error'); return; }
+  let val = '';
+  if (meta.cipher){
+    if (!unlockedKeys[currentWs]){ toast('Unlock to copy','error'); return; }
+    if (!decryptedCache[currentWs]) decryptedCache[currentWs] = {};
+    if (!decryptedCache[currentWs][entryId]){ try { const pt = await decryptWithKey(unlockedKeys[currentWs], meta.cipher, meta.iv); decryptedCache[currentWs][entryId] = JSON.parse(pt); } catch(e){ toast('Decrypt failed','error'); return; } }
+    val = decryptedCache[currentWs][entryId][field] || '';
+  } else val = meta[field] || '';
+  if (!val){ toast('Nothing to copy','error'); return; }
+  try { await navigator.clipboard.writeText(val); toast(`${field} copied`,'success'); log(`Copied ${field} for ${meta.title}`); setTimeout(async ()=>{ try{ await navigator.clipboard.writeText(''); log('Clipboard cleared'); }catch(e){} },15000); } catch(e){ fallbackCopy(val); toast('Copied (fallback)','info'); }
+}
+function fallbackCopy(txt){
+  const ta = el('textarea'); ta.value = txt; ta.style.position = 'fixed'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); }catch(e){} ta.remove();
+}
+
+function viewEntry(id){
+  if (!currentWs) return;
+  const arr = loadEntries(currentWs); const meta = arr.find(x=>x.id===id); if(!meta) return;
+  (async ()=>{
+    let obj = null;
+    if (meta.cipher){
+      if (!unlockedKeys[currentWs]){ toast('Unlock to view','error'); return; }
+      if (!decryptedCache[currentWs]) decryptedCache[currentWs] = {};
+      if (!decryptedCache[currentWs][id]){ try{ const pt = await decryptWithKey(unlockedKeys[currentWs], meta.cipher, meta.iv); decryptedCache[currentWs][id] = JSON.parse(pt); } catch(e){ toast('Decrypt failed','error'); return; } }
+      obj = decryptedCache[currentWs][id];
+    } else obj = meta;
+    openModal('Credential', `
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label>Title</label><input class="input" value="${escapeHtml(obj.title)}" disabled />
+        <label>Username</label><div style="display:flex;gap:8px"><input id="v_user" class="input" value="${escapeHtml(obj.username)}" /><button id="copy_v_user" class="btn">Copy</button></div>
+        <label>Password</label><div style="display:flex;gap:8px"><input id="v_pwd" class="input" value="${escapeHtml(obj.password)}" /><button id="copy_v_pwd" class="btn">Copy</button></div>
+        <label>URL</label><div style="display:flex;gap:8px"><input id="v_url" class="input" value="${escapeHtml(obj.url||'')}" /><button id="copy_v_url" class="btn">Copy</button></div>
+      </div>
+      <div class="actions"><button id="closeView" class="btn ghost">Close</button></div>
+    `, ()=>{ $('#copy_v_user').addEventListener('click', ()=> copyText($('#v_user').value)); $('#copy_v_pwd').addEventListener('click', ()=> copyText($('#v_pwd').value)); $('#copy_v_url').addEventListener('click', ()=> copyText($('#v_url').value)); $('#closeView').addEventListener('click', closeModal); });
+  })();
+}
+
+function editEntry(id){
+  if (!currentWs) return;
+  const arr = loadEntries(currentWs); const meta = arr.find(x=>x.id===id); if(!meta) return;
+  (async ()=>{
+    let obj = null;
+    if (meta.cipher){
+      if (!unlockedKeys[currentWs]){ toast('Unlock to edit','error'); return; }
+      if (!decryptedCache[currentWs]) decryptedCache[currentWs] = {};
+      if (!decryptedCache[currentWs][id]){ try{ const pt = await decryptWithKey(unlockedKeys[currentWs], meta.cipher, meta.iv); decryptedCache[currentWs][id] = JSON.parse(pt); } catch(e){ toast('Decrypt failed','error'); return; } }
+      obj = decryptedCache[currentWs][id];
+    } else obj = meta;
+    openModal('Edit credential', `
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <input id="e_title" class="input" value="${escapeHtml(obj.title)}" />
+        <input id="e_user" class="input" value="${escapeHtml(obj.username)}" />
+        <input id="e_pwd" class="input" value="${escapeHtml(obj.password)}" />
+        <input id="e_url" class="input" value="${escapeHtml(obj.url||'')}" />
+      </div>
+      <div class="actions"><button id="saveEdit" class="btn">Save</button><button id="cancelEdit" class="btn ghost">Cancel</button></div>
+    `, ()=> { $('#cancelEdit').addEventListener('click', closeModal); $('#saveEdit').addEventListener('click', ()=> saveEntry(id)); });
+  })();
+}
+
+/* when deleting, push item to trash then remove */
+async function deleteEntryWithTrash(id){
+  if (!currentWs) return;
+  const arr = loadEntries(currentWs);
+  const meta = arr.find(x=>x.id===id);
+  if (meta){
+    await pushToTrash({ type:'entry', payload:meta, workspaceId: currentWs, timestamp: new Date().toISOString() }).catch(()=>{});
+    const remaining = arr.filter(x=>x.id!==id); saveEntries(currentWs, remaining);
+    if (decryptedCache[currentWs]) delete decryptedCache[currentWs][id];
+    toast('Entry deleted (moved to trash)','info');
+    log('Deleted entry: '+(meta.title||meta.id));
+    renderList();
+  }
+}
+
+/* ---------------------- Copy helpers ---------------------- */
+async function copyText(val){
+  if (!val){ toast('Nothing to copy','error'); return; }
+  try { await navigator.clipboard.writeText(val); toast('Copied','success'); log('Copied value'); setTimeout(async ()=>{ try{ await navigator.clipboard.writeText(''); log('Clipboard cleared'); }catch(e){} },15000); } catch(e){ fallbackCopy(val); toast('Copied (fallback)','info'); }
+}
+
+/* ---------------------- Export / Import ---------------------- */
+function doExport(){
+  if (workspaces.length === 0){ toast('Nothing to export','error'); return; }
+  const payload = { exportMeta: { app: 'PasswordVault', version:'1.0.2', exportedAt: new Date().toISOString() }, workspaces: workspaces, entries: {} };
+  for (const w of workspaces) payload.entries[w.id] = loadEntries(w.id);
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = el('a', { href: url, download: `vault-export-${new Date().toISOString().slice(0,10)}.json` });
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  toast('Export started','info'); log('Exported vault');
+}
+
+function doImport(){
+  openModal('Import backup', `<input id="imp_file" type="file" accept=".json" /><div class="actions"><button id="impGo" class="btn">Import</button><button id="impCancel" class="btn ghost">Cancel</button></div>`, ()=>{
+    $('#impCancel').addEventListener('click', closeModal);
+    $('#impGo').addEventListener('click', async ()=>{
+      const f = $('#imp_file').files[0];
+      if (!f){ toast('Pick a file','error'); return; }
+      try{
+        const txt = await f.text(); const obj = JSON.parse(txt);
+        if (!obj || !obj.exportMeta || obj.exportMeta.app !== 'PasswordVault' || !obj.workspaces){ toast('Invalid backup file','error'); return; }
+        for (const ws of obj.workspaces){
+          if (!workspaces.find(x=>x.id===ws.id)){
+            workspaces.push(ws);
+            if (obj.entries && obj.entries[ws.id]) localStorage.setItem(entriesKey(ws.id), JSON.stringify(obj.entries[ws.id]));
+          } else {
+            if (obj.entries && obj.entries[ws.id]){
+              const existing = loadEntries(ws.id);
+              const incoming = obj.entries[ws.id];
+              incoming.forEach(inc=>{ if (!existing.find(x=>x.id === inc.id)) existing.push(inc); });
+              saveEntries(ws.id, existing);
+            }
+          }
+        }
+        saveWorkspaces(); closeModal(); renderWorkspaces(); toast('Import complete (merged)','success'); log('Imported backup');
+      }catch(e){ console.error(e); toast('Import failed','error'); log('Import failed'); }
+    });
+  });
+}
+
+/* ---------------------- Trash (accidental delete backup) ---------------------- */
+async function openTrashModal(){
+  // show contents of trash (from backup folder if exists or from local IndexedDB fallback)
+  const trash = await loadTrash();
+  openModal('Trash (deleted items)', `<div style="max-height:320px;overflow:auto;padding:6px">${trash.map((t,i)=>`<div style="padding:8px;border-bottom:1px solid rgba(255,255,255,0.03)"><b>${escapeHtml(t.type)}</b> <span class="small muted">at ${escapeHtml(t.timestamp)}</span><div class="muted">${escapeHtml(JSON.stringify(t.payload).slice(0,200))}${JSON.stringify(t.payload).length>200? '…':''}</div><div style="margin-top:6px"><button data-idx="${i}" class="btn restoreBtn">Restore</button> <button data-idx="${i}" class="btn ghost delTrashBtn">Remove</button></div></div>`).join('')}</div>`, ()=>{
+    // bind restore / delete
+    modalContent.querySelectorAll('.restoreBtn').forEach(btn=> btn.addEventListener('click', async (ev)=>{
+      const idx = Number(btn.dataset.idx); const item = trash[idx];
+      if (!item) return;
+      if (item.type === 'entry'){
+        const wsId = item.workspaceId;
+        const entries = loadEntries(wsId);
+        if (!entries.find(e=>e.id === item.payload.id)) entries.push(item.payload);
+        saveEntries(wsId, entries);
+        toast('Entry restored to workspace','success'); log('Restored entry from trash');
+      } else if (item.type === 'workspace'){
+        if (!workspaces.find(w=>w.id === item.payload.id)) { workspaces.push(item.payload); saveWorkspaces(); }
+        toast('Workspace restored','success'); log('Restored workspace from trash');
+      }
+      // remove from trash store
+      trash.splice(idx,1);
+      await saveTrash(trash);
+      closeModal();
+    }));
+    modalContent.querySelectorAll('.delTrashBtn').forEach(btn=> btn.addEventListener('click', async (ev)=>{
+      const idx = Number(btn.dataset.idx); trash.splice(idx,1); await saveTrash(trash); toast('Removed from trash','info'); closeModal();
+    }));
+  });
+}
+async function pushToTrash(obj){
+  // push into local trash first and also persist to backup folder if present
+  const current = await loadTrash();
+  current.unshift(obj);
+  // cap trash at 200
+  if (current.length > 200) current.length = 200;
+  await saveTrash(current);
+}
+async function loadTrash(){
+  // attempt to load from backup folder file first
+  try {
+    const handle = await getBackupDirHandle();
+    if (handle){
+      const fh = await handle.getFileHandle(VAULT_TRASH_NAME, { create: true });
+      const file = await fh.getFile();
+      const txt = await file.text();
+      if (!txt) return [];
+      return JSON.parse(txt);
+    }
+  } catch(e){}
+  // fallback to localStorage
+  const t = localStorage.getItem('pv_trash_v1') || '[]';
+  try { return JSON.parse(t); } catch(e){ return []; }
+}
+async function saveTrash(arr){
+  // save to backup folder if available
+  try {
+    const handle = await getBackupDirHandle();
+    if (handle){
+      const fh = await handle.getFileHandle(VAULT_TRASH_NAME, { create: true });
+      const w = await fh.createWritable();
+      await w.write(JSON.stringify(arr, null, 2));
+      await w.close();
+      return;
+    }
+  } catch(e){}
+  // fallback to localStorage
+  localStorage.setItem('pv_trash_v1', JSON.stringify(arr));
+}
+
+/* ---------------------- File System Access: handles in IndexedDB ---------------------- */
+function openHandlesDB(){
+  return new Promise((res, rej)=>{
+    if (!('indexedDB' in window)) return rej(new Error('IndexedDB not supported'));
+    const req = indexedDB.open(DB_HANDLES, 1);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+    };
+    req.onsuccess = e => res(e.target.result);
+    req.onerror = e => rej(e.target.error);
+  });
+}
+async function saveHandleToIDB(key, handle){
+  try {
+    const db = await openHandlesDB();
+    return new Promise((res, rej)=>{
+      const tx = db.transaction('store','readwrite');
+      tx.objectStore('store').put(handle, key);
+      tx.oncomplete = ()=> { db.close(); res(); };
+      tx.onerror = ()=> { db.close(); rej(tx.error); };
+    });
+  } catch(e){ throw e; }
+}
+async function getHandleFromIDB(key){
+  try {
+    const db = await openHandlesDB();
+    return new Promise((res, rej)=>{
+      const tx = db.transaction('store','readonly');
+      const rq = tx.objectStore('store').get(key);
+      rq.onsuccess = ()=> { db.close(); res(rq.result); };
+      rq.onerror = ()=> { db.close(); rej(rq.error); };
+    });
+  } catch(e){ return null; }
+}
+
+/* get backup dir handle (preferred from stored handle) */
+async function getBackupDirHandle(){
+  if (backupDirHandle) return backupDirHandle;
+  // try indexed db
+  try {
+    const h = await getHandleFromIDB('backupDir');
+    if (h) { backupDirHandle = h; return h; }
+  } catch(e){}
+  return null;
+}
+
+/* selector to set backup folder */
+async function promptAndSaveBackupDir(){
+  if (!('showDirectoryPicker' in window)) {
+    toast('Directory picker not supported in this browser — backups will download instead','info');
+    return;
+  }
+  try {
+    const handle = await window.showDirectoryPicker();
+    // test permissions
+    try {
+      const perm = await handle.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') await handle.requestPermission({mode:'readwrite'});
+    } catch(e){}
+    backupDirHandle = handle;
+    try { await saveHandleToIDB('backupDir', handle); } catch(e){ /* ignore */ }
+    $('#backupFolderLabel').textContent = (handle.name || 'Selected folder');
+    toast('Backup folder set','success'); log('Backup folder selected: '+(handle.name||''));
+    updateBackupInfo();
+  } catch(e){ console.error(e); toast('Folder selection cancelled','info'); }
+}
+
+/* write file helpers (append/overwrite) */
+async function appendToVaultLog(text){
+  try {
+    const dir = await getBackupDirHandle();
+    if (!dir) return;
+    const fh = await dir.getFileHandle(VAULT_LOG_NAME, { create: true });
+    // we need to append. Some browsers support createWritable({ keepExistingData:true })
+    try {
+      const file = await fh.getFile();
+      const size = file.size;
+      const writable = await fh.createWritable({ keepExistingData: true });
+      // write at end
+      await writable.write({ type: 'write', position: size, data: text + '\n' });
+      await writable.close();
+    } catch(e){
+      // fallback: read existing, then write combined (slower)
+      const file = await fh.getFile();
+      const old = await file.text();
+      const w = await fh.createWritable();
+      await w.write(old + '\n' + text);
+      await w.close();
+    }
+  } catch(e){
+    // no folder or permission — ignore
+  }
+}
+
+async function writeBackupFiles(payloadObj){
+  try {
+    const dir = await getBackupDirHandle();
+    if (!dir) throw new Error('no-dir');
+    // write main backup (overwrites)
+    const mainFh = await dir.getFileHandle(VAULT_BACKUP_NAME, { create: true });
+    const w1 = await mainFh.createWritable();
+    await w1.write(JSON.stringify(payloadObj, null, 2));
+    await w1.close();
+
+    // also write a 'secret' backup containing only stored ciphertexts (what's already stored) and a timestamp
+    const secretObj = { exportMeta: { app: 'PasswordVault', version:'1.0.2', createdAt: new Date().toISOString(), secret: true }, workspaces: workspaces, entries: {} };
+    for (const w of workspaces) secretObj.entries[w.id] = loadEntries(w.id);
+    const secretFh = await dir.getFileHandle(VAULT_BACKUP_SECRET_NAME, { create: true });
+    const w2 = await secretFh.createWritable();
+    await w2.write(JSON.stringify(secretObj, null, 2));
+    await w2.close();
+
+    // write or update vault.log entry
+    await appendToVaultLog(`Auto-backup written at ${new Date().toISOString()}`);
+    return true;
+  } catch(e){
+    return false;
+  }
+}
+
+/* Save a backup now: writes to folder if available, else prompts a download */
+async function performBackupNow(){
+  const payload = { exportMeta: { app: 'PasswordVault', version:'1.0.2', exportedAt: new Date().toISOString() }, workspaces: workspaces, entries: {} };
+  for (const w of workspaces) payload.entries[w.id] = loadEntries(w.id);
+  // write to folder if exists
+  const dir = await getBackupDirHandle();
+  if (dir){
+    const ok = await writeBackupFiles(payload);
+    if (ok){ toast('Backup saved to folder','success'); log('Backup written to folder'); updateBackupInfo(); return; }
+    // else fall through to download fallback
+  }
+  // fallback: offer download
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const a = el('a', { href: URL.createObjectURL(blob), download: `vault-backup-${new Date().toISOString().slice(0,10)}.json` });
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('Backup downloaded (no folder chosen)','info'); log('Backup downloaded as fallback');
+}
+
+/* export activity log: write vault.log or download */
+async function exportLogNow(){
+  // prefer folder file
+  const dir = await getBackupDirHandle();
+  if (dir){
+    try {
+      const fh = await dir.getFileHandle(VAULT_LOG_NAME, { create: true });
+      const file = await fh.getFile();
+      const txt = await file.text();
+      const blob = new Blob([txt], { type: 'text/plain' });
+      const a = el('a', { href: URL.createObjectURL(blob), download: `vault-log-${new Date().toISOString().slice(0,10)}.log` });
+      document.body.appendChild(a); a.click(); a.remove();
+      toast('Log exported from folder','info'); log('Exported log from folder');
+      return;
+    } catch(e){}
+  }
+  // fallback: build from in-memory UI (limited)
+  const ui = $('#activityLog').innerText;
+  const blob = new Blob([ui], { type: 'text/plain' });
+  const a = el('a', { href: URL.createObjectURL(blob), download: `vault-log-ui-${new Date().toISOString().slice(0,10)}.log` });
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('Log downloaded','info'); log('Log downloaded fallback');
+}
+
+/* ---------------------- Trash management UI helpers ---------------------- */
+$('#restoreTrashBtn').addEventListener('click', async ()=> {
+  await openTrashModal();
+});
+$('#clearTrashBtn').addEventListener('click', async ()=> {
+  if (!confirm('Clear trash permanently?')) return;
+  await saveTrash([]);
+  toast('Trash cleared','info'); log('Trash cleared');
+});
+
+/* ---------------------- Backup scheduling ---------------------- */
+function loadAutoBackupSettings(){
+  try{
+    const raw = localStorage.getItem(AUTO_BACKUP_KEY);
+    if (!raw) return { enabled: false, interval: 10 };
+    return JSON.parse(raw);
+  }catch(e){ return { enabled:false, interval:10 }; }
+}
+function saveAutoBackupSettings(s){
+  localStorage.setItem(AUTO_BACKUP_KEY, JSON.stringify(s));
+}
+function startAutoBackupTimer(){
+  stopAutoBackupTimer();
+  const s = loadAutoBackupSettings();
+  if (!s.enabled) return;
+  const ms = (s.interval || 10) * 60 * 1000;
+  autoBackupTimer = setInterval(()=> {
+    // only trigger if user left auto enabled
+    performBackupNow().catch(()=>{});
+  }, ms);
+  $('#autoBackupToggle').checked = true;
+  $('#autoBackupInterval').value = String(s.interval || 10);
+}
+function stopAutoBackupTimer(){
+  if (autoBackupTimer) { clearInterval(autoBackupTimer); autoBackupTimer = null; }
+  $('#autoBackupToggle').checked = false;
+}
+$('#autoBackupToggle').addEventListener('change', ()=> {
+  const enabled = $('#autoBackupToggle').checked;
+  const interval = Number($('#autoBackupInterval').value) || 10;
+  saveAutoBackupSettings({ enabled, interval });
+  if (enabled) startAutoBackupTimer(); else stopAutoBackupTimer();
+});
+$('#autoBackupInterval').addEventListener('change', ()=> {
+  const s = loadAutoBackupSettings(); s.interval = Number($('#autoBackupInterval').value) || 10; saveAutoBackupSettings(s);
+  if (s.enabled) startAutoBackupTimer();
+});
+
+/* ---------------------- Append/delete helpers (trash, write) ---------------------- */
+async function deleteEntry(id){
+  if (!currentWs) return;
+  const arr = loadEntries(currentWs).filter(x=>x.id!==id);
+  saveEntries(currentWs, arr);
+  if (decryptedCache[currentWs]) delete decryptedCache[currentWs][id];
+  closeModal(); toast('Entry deleted','info'); log('Deleted entry'); renderList();
+}
+
+/* ---------------------- File helpers ---------------------- */
+function fileToDataURL(file){ return new Promise((res, rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }
+
+/* ---------------------- Resizable columns ---------------------- */
+function initResizableCols(){
+  const app = document.getElementById('appGrid');
+  const left = document.getElementById('colLeft');
+  const center = document.getElementById('colCenter');
+  const right = document.getElementById('colRight');
+  const r1 = document.getElementById('resizer1');
+  const r2 = document.getElementById('resizer2');
+
+  // try to load saved sizes
+  const saved = localStorage.getItem(LOCAL_LAYOUT_KEY);
+  if (saved) {
+    try {
+      const o = JSON.parse(saved);
+      if (o.col1) document.documentElement.style.setProperty('--col1', o.col1);
+      if (o.col2) document.documentElement.style.setProperty('--col2', o.col2);
+      if (o.col3) document.documentElement.style.setProperty('--col3', o.col3);
+    } catch(e){}
+  }
+
+  function startDrag(resizerIndex, e){
+    e.preventDefault();
+    const startX = e.clientX;
+    const rect = app.getBoundingClientRect();
+    const col1Init = left.getBoundingClientRect().width;
+    const col3Init = right.getBoundingClientRect().width;
+    const centerInit = center.getBoundingClientRect().width;
+    function onMove(me){
+      const dx = me.clientX - startX;
+      if (resizerIndex === 1){
+        const newCol1 = Math.max(160, col1Init + dx);
+        const newCenter = Math.max(200, centerInit - dx);
+        document.documentElement.style.setProperty('--col1', newCol1 + 'px');
+        document.documentElement.style.setProperty('--col2', newCenter + 'px');
+      } else {
+        const newCol3 = Math.max(160, col3Init - dx);
+        const newCenter = Math.max(200, centerInit + dx);
+        document.documentElement.style.setProperty('--col3', newCol3 + 'px');
+        document.documentElement.style.setProperty('--col2', newCenter + 'px');
+      }
+    }
+    function onUp(){
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      // persist sizes
+      const computed = getComputedStyle(document.documentElement);
+      localStorage.setItem(LOCAL_LAYOUT_KEY, JSON.stringify({
+        col1: computed.getPropertyValue('--col1').trim(),
+        col2: computed.getPropertyValue('--col2').trim(),
+        col3: computed.getPropertyValue('--col3').trim()
+      }));
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  r1.addEventListener('mousedown', (e)=> startDrag(1,e));
+  r2.addEventListener('mousedown', (e)=> startDrag(2,e));
+}
+initResizableCols();
+
+/* ---------------------- Backup & Log UI wiring ---------------------- */
+$('#setBackupFolderBtn').addEventListener('click', promptAndSaveBackupDir);
+$('#backupNowBtn').addEventListener('click', async ()=> { await performBackupNow(); updateBackupInfo(); });
+$('#exportLogBtn').addEventListener('click', exportLogNow);
+
+// initialize backup settings / folder label
+async function initBackupState(){
+  try {
+    // attempt to load stored handle name
+    const h = await getHandleFromIDB('backupDir');
+    if (h){ backupDirHandle = h; $('#backupFolderLabel').textContent = (h.name || 'Selected folder'); }
+  } catch(e){}
+  // load auto-backup settings
+  const s = loadAutoBackupSettings();
+  $('#autoBackupToggle').checked = !!s.enabled;
+  $('#autoBackupInterval').value = String(s.interval || 10);
+  if (s.enabled) startAutoBackupTimer();
+  updateBackupInfo();
+}
+function updateBackupInfo(){
+  (async ()=>{
+    const dir = await getBackupDirHandle();
+    if (dir) {
+      $('#backupInfo').textContent = `Backups & logs saved to: ${dir.name || 'Selected folder'}`;
+      $('#backupFolderLabel').textContent = dir.name || 'Selected folder';
+    } else {
+      $('#backupInfo').textContent = `No backup folder selected — backups will download instead.`;
+      $('#backupFolderLabel').textContent = 'No folder set';
+    }
+  })();
+}
+initBackupState();
+
+/* ---------------------- Backup on app events ---------------------- */
+// Optionally write backup after important operations (create/delete)
+async function attemptAutoBackupMinor(){
+  // write a quick backup but don't spam logs
+  const s = loadAutoBackupSettings();
+  if (!s.enabled) return;
+  try { await performBackupNow(); } catch(e){}
+}
+
+/* tie some actions to backup */
+const originalCreateWorkspaceFlow = createWorkspaceFlow; // not overwriting now, but can call attemptAutoBackupMinor in flow where needed
+
+/* ---------------------- Activity log to file on unload (best-effort) ---------------------- */
+window.addEventListener('beforeunload', async (ev) => {
+  // try to flush logs to file
+  try { await appendToVaultLog(`Session closed at ${new Date().toISOString()}`); } catch(e){}
+});
+
+/* ---------------------- Init wiring (UI events) ---------------------- */
+$('#newWsBtn').addEventListener('click', createWorkspaceFlow);
+$('#wsSearch').addEventListener('input', renderWorkspaces);
+$('#addEntryBtn').addEventListener('click', addEntryFlow);
+$('#entrySearch').addEventListener('input', ()=> { if (currentWs) renderList(); });
+$('#lockBtn').addEventListener('click', unlockFlow);
+$('#exportBtn').addEventListener('click', doExport);
+$('#importBtn').addEventListener('click', doImport);
+$('#showAll').addEventListener('click', ()=> {
+  if (!currentWs){ toast('Select workspace','error'); return; }
+  openModal('All entries', '<div style="max-height:400px;overflow:auto;">' + loadEntries(currentWs).map(e=>`<div style="padding:8px;border-bottom:1px solid rgba(255,255,255,0.03)"><b>${escapeHtml(e.title)}</b><div class="meta">${escapeHtml(e.username||'')}</div></div>`).join('') + '</div>');
+});
+$('#clearLog').addEventListener('click', ()=> { $('#activityLog').innerHTML = ''; toast('Logs cleared','info'); });
+$('#copyVisibleBtn')?.addEventListener('click', ()=> {
+  if (!currentWs){ toast('Select workspace','error'); return; }
+  const arr = loadEntries(currentWs);
+  try { navigator.clipboard.writeText(JSON.stringify(arr, null, 2)); toast('Visible JSON copied','info'); } catch(e){
+    const blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
+    const a = el('a', { href: URL.createObjectURL(blob), download:'visible-entries.json' });
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('Downloaded visible JSON','info');
+  }
+});
+$('#exportJSONBtn')?.addEventListener('click', doExport);
+$('#footerExport').addEventListener('click', doExport);
+$('#footerImport').addEventListener('click', doImport);
+
+/* ---------------------- Trash & backup integration tests ---------------------- */
+/* (left intentionally lightweight; user flows already call pushToTrash on deletes) */
+
+/* ---------------------- Helpers for persistent backup info ---------------------- */
+function humanizeSize(n){
+  if (!n) return '0 B';
+  if (n < 1024) return n + ' B';
+  if (n < 1024*1024) return (n/1024).toFixed(1)+' KB';
+  return (n/(1024*1024)).toFixed(2)+' MB';
+}
+
+/* ---------------------- Init render ---------------------- */
+function init(){
+  renderWorkspaces();
+  if (workspaces.length > 0) selectWorkspace(workspaces[0].id);
+  updateLockUI();
+  // load backup folder label if available
+  (async ()=> {
+    const h = await getBackupDirHandle();
+    if (h) $('#backupFolderLabel').textContent = (h.name || 'Selected folder');
+  })();
+}
+init();
+
+</script>
+</body>
+</html>
